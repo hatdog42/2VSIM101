@@ -17,6 +17,7 @@ class Light;
 class Engine;
 class MainWindow;
 class Mesh;
+class PointCloud;
 
 class Renderer : public QWindow
 {
@@ -87,6 +88,11 @@ private:
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
     VkPipeline graphicsPipeline2;
+    // Point cloud pipeline and GPU vertex data.
+    VkPipeline pointCloudPipeline{ VK_NULL_HANDLE };
+
+    VkBuffer pointCloudVertexBuffer{ VK_NULL_HANDLE };
+    VkDeviceMemory pointCloudVertexBufferMemory{ VK_NULL_HANDLE };
 
     VkCommandPool commandPool;
 
@@ -152,6 +158,7 @@ private:
     void createCommandBuffers();
     void createSyncObjects();
     void createVertexBuffer(Mesh *mesh);
+    void createPointCloudVertexBuffer(PointCloud* pointCloud);
     void createIndexBuffer(Mesh* mesh);
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);

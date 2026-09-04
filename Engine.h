@@ -6,6 +6,7 @@
 class Terrain;
 class GameObject;
 class Mesh;
+class PointCloud;
 class Texture;
 
 // Holds the meshes and textures for the scene
@@ -22,6 +23,7 @@ public:
 
     void loadTextures();
     void loadMeshes();
+    void loadPointCloud();
     void loadScene();
 
     void setRenderer(Renderer *rendererIn);
@@ -47,6 +49,7 @@ private:
 
     std::vector<Mesh*> mMeshes;
     std::vector<Texture*> mTextures;
+    PointCloud* mPointCloud{ nullptr };
 
     std::vector<GameObject*> mGameObjects; // Vector to the GameObjects
 

@@ -3,6 +3,7 @@
 #include "Collider.h"
 #include "GameObject.h"
 #include "Mesh.h"
+#include "PointCloud.h"
 #include "Utilities.h"
 
 #define STB_IMAGE_IMPLEMENTATION     // Needs to be done ONCE before stb_image is used!
@@ -96,8 +97,9 @@ void Renderer::initVulkan()
     createCommandBuffers();
     createSyncObjects();
 
-    // We make the meshes after Vulkan is set up,
+    // We make renderable data after Vulkan is set up.
     mEngine->loadMeshes();
+    mEngine->loadPointCloud();
 
     // Making the Game Objects of the scene
     mEngine->loadScene();
@@ -182,6 +184,20 @@ void Renderer::cleanup()
     // Destroy swapchain and related per-swapchain resources
     cleanupSwapChain();
 
+    // Free the point cloud's GPU resources and CPU data.
+    if (pointCloudVertexBuffer != VK_NULL_HANDLE)
+    {
+        vkDestroyBuffer(device, pointCloudVertexBuffer, nullptr);
+        pointCloudVertexBuffer = VK_NULL_HANDLE;
+    }
+    if (pointCloudVertexBufferMemory != VK_NULL_HANDLE)
+    {
+        vkFreeMemory(device, pointCloudVertexBufferMemory, nullptr);
+        pointCloudVertexBufferMemory = VK_NULL_HANDLE;
+    }
+    delete mEngine->mPointCloud;
+    mEngine->mPointCloud = nullptr;
+
     // Depthbuffer:
     if (depthImageView != VK_NULL_HANDLE) 
     {
@@ -261,6 +277,11 @@ void Renderer::cleanup()
     {
         vkDestroyPipeline(device, graphicsPipeline2, nullptr);
         graphicsPipeline2 = VK_NULL_HANDLE;
+    }
+    if (pointCloudPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, pointCloudPipeline, nullptr);
+        pointCloudPipeline = VK_NULL_HANDLE;
     }
     if (pipelineLayout != VK_NULL_HANDLE)
     {
@@ -814,13 +835,18 @@ void Renderer::createDescriptorSetLayout()
 
 void Renderer::createGraphicsPipeline()
 {
-    auto vertShaderCode = readFile(PATH + "Shaders/PhongVert.spv");
-    auto fragShaderCode = readFile(PATH + "Shaders/PhongFrag.spv");
+    const std::string shaderPath = std::string(PROJECT_SOURCE_PATH) + "/Shaders/";
+    auto vertShaderCode = readFile(shaderPath + "PhongVert.spv");
+    auto fragShaderCode = readFile(shaderPath + "PhongFrag.spv");
+    auto pointVertShaderCode = readFile(shaderPath + "vert.spv");
+    auto pointFragShaderCode = readFile(shaderPath + "frag.spv");
 
     LOG("Vertex shader:");
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     LOGH("Fragment shader:");
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+    VkShaderModule pointVertShaderModule = createShaderModule(pointVertShaderCode);
+    VkShaderModule pointFragShaderModule = createShaderModule(pointFragShaderCode);
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -957,9 +983,23 @@ void Renderer::createGraphicsPipeline()
         throw std::runtime_error("failed to create graphics pipeline!");
     else
         LOG("created graphics pipeline2!");
+    
+    // Create a pipeline that draws each vertex as one point.
+    shaderStages[0].module = pointVertShaderModule;
+    shaderStages[1].module = pointFragShaderModule;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pointCloudPipeline) != VK_SUCCESS)
+        throw std::runtime_error("failed to create point-cloud pipeline!");
+    else
+        LOG("created point-cloud pipeline!");
 
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
+    vkDestroyShaderModule(device, pointFragShaderModule, nullptr);
+    vkDestroyShaderModule(device, pointVertShaderModule, nullptr);
 }
 
 void Renderer::createFramebuffers()
@@ -1351,6 +1391,25 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
                 vkCmdDraw(commandBuffer, static_cast<uint32_t>(mEngine->mMeshes[GOB->mMesh]->getVertexCount()), 1, 0, 0);
         }
 
+        // Draw the point cloud when its CPU and GPU data are ready.
+        if (mEngine->mPointCloud != nullptr && pointCloudVertexBuffer != VK_NULL_HANDLE)
+        {
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointCloudPipeline);
+
+            VkBuffer vertexBuffers[] = {pointCloudVertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+            // The point shaders only need the camera descriptor.
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
+                                    1, &descriptorSets[currentFrame], 0, nullptr);
+
+            // Draw one vertex for each point.
+            vkCmdDraw(commandBuffer,
+                      static_cast<uint32_t>(mEngine->mPointCloud->getVertices().size()),
+                      1, 0, 0);
+        }
+
     vkCmdEndRenderPass(commandBuffer);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
@@ -1411,6 +1470,45 @@ void Renderer::createVertexBuffer(Mesh* mesh)
                  *mesh->vertexBufferPointer(), *mesh->vertexBufferMemoryPointer());
 
     copyBuffer(stagingBuffer, mesh->vertexBuffer(), bufferSize);
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+}
+
+void Renderer::createPointCloudVertexBuffer(PointCloud* pointCloud)
+{
+    const std::vector<Vertex>& vertices = pointCloud->getVertices();
+    if (vertices.empty())
+        return;
+
+    const VkDeviceSize bufferSize = sizeof(Vertex) * vertices.size();
+
+    // Create a CPU-visible buffer for the upload
+    VkBuffer stagingBuffer{ VK_NULL_HANDLE };
+    VkDeviceMemory stagingBufferMemory{ VK_NULL_HANDLE };
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer,
+                 stagingBufferMemory);
+
+    // Copy the prepared vertices into the staging buffer
+    void* data = nullptr;
+    if (vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data) != VK_SUCCESS)
+        throw std::runtime_error("failed to map point-cloud staging memory!");
+
+    memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    // Create the final vertex buffer in fast GPU memory
+    createBuffer(bufferSize,
+                 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                 pointCloudVertexBuffer,
+                 pointCloudVertexBufferMemory);
+
+    // Upload the vertices and release the temporary buffer
+    copyBuffer(stagingBuffer, pointCloudVertexBuffer, bufferSize);
 
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMemory, nullptr);
@@ -1506,7 +1604,7 @@ void Renderer::updateUniformBuffer(uint32_t currentImage)
 
     UniformBufferObject ubo{};
     ubo.view = glm::lookAt(mCamera->mPosition, mCamera->mPosition + mCamera->mForward, mCamera->mUp);
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 100.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float) swapChainExtent.height, 0.1f, 10000.0f);
     ubo.proj[1][1] *= -1;
     ubo.cameraPosition = glm::vec4(mCamera->mPosition, 0.f);
     // ubo.lightPosition =

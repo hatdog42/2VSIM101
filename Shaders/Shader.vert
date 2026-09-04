@@ -2,24 +2,21 @@
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inColor;
-layout(location = 2) in vec2 inTexCoord;
 
 layout(location = 0) out vec3 fragColor;
-layout(location = 1) out vec2 fragTexCoord;
 
-layout(binding = 0) uniform UniformBufferObject {
-    mat4 model;
+layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
+    vec4 cameraPosition;
+    vec4 lightPosition;
+    vec4 lightColor;
+    vec4 lightParams;
 } ubo;
 
-//layout(push_constant) uniform PushConstants {
-//    vec3 testValue;
-//} push;
-
-void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model *
-            vec4(inPosition, 1.0); // the last parameter is the w-component (homogeneous coordinates).
+void main()
+{
+    gl_Position = ubo.proj * ubo.view * vec4(inPosition, 1.0);
+    gl_PointSize = 1.0;
     fragColor = inColor;
-    fragTexCoord = inTexCoord;
 }

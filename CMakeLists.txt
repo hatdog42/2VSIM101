@@ -40,6 +40,7 @@ set(SOURCES
     Logger.h Logger.cpp
     MainWindow.h MainWindow.cpp
     Mesh.h Mesh.cpp
+    PointCloud.h PointCloud.cpp
     Renderer.h Renderer.cpp
     Terrain.h Terrain.cpp
     Texture.h
@@ -60,6 +61,10 @@ file(GLOB SHADER_FILES
 )
 
 add_executable(3Dprog26 ${SOURCES} ${SHADER_FILES})
+
+# Lets the executable find the large point-cloud data file regardless of the
+# IDE's runtime working directory.
+target_compile_definitions(3Dprog26 PRIVATE PROJECT_SOURCE_PATH="${CMAKE_CURRENT_SOURCE_DIR}")
 
 if(MSVC)
     # Required for proper C++ exception handling with MSVC

@@ -99,6 +99,8 @@ void MainWindow::keyPressEvent(QKeyEvent* event)
         mInput.Q = true;
     if(event->key() == Qt::Key_E)
         mInput.E = true;
+    if(event->key() == Qt::Key_Shift)
+        mInput.LSHIFT = true;
 }
 
 void MainWindow::keyReleaseEvent(QKeyEvent *event)
@@ -116,6 +118,8 @@ void MainWindow::keyReleaseEvent(QKeyEvent *event)
         mInput.Q = false;
     if(event->key() == Qt::Key_E)
         mInput.E = false;
+    if(event->key() == Qt::Key_Shift)
+        mInput.LSHIFT = false;
 }
 
 void MainWindow::mousePressEvent(QMouseEvent *event)
@@ -188,30 +192,39 @@ void MainWindow::handleInput(float deltaTime)
 
     if (mInput.RMB)
     {
+        const float cameraSpeed = mCameraSpeed * (mInput.LSHIFT ? 5.0f : 1.0f);
+
         if (mInput.W)
-            mCamera->mCameraMovement.z += mCameraSpeed * deltaTime; //forward
+            mCamera->mCameraMovement.z += cameraSpeed * deltaTime; //forward
         if (mInput.S)
-            mCamera->mCameraMovement.z -= mCameraSpeed * deltaTime; //backward
+            mCamera->mCameraMovement.z -= cameraSpeed * deltaTime; //backward
         if (mInput.D)
-            mCamera->mCameraMovement.x += mCameraSpeed * deltaTime; //right
+            mCamera->mCameraMovement.x += cameraSpeed * deltaTime; //right
         if (mInput.A)
-            mCamera->mCameraMovement.x -= mCameraSpeed * deltaTime; //left
+            mCamera->mCameraMovement.x -= cameraSpeed * deltaTime; //left
         if (mInput.Q)
-            mCamera->mCameraMovement.y -= mCameraSpeed * deltaTime; //down
+            mCamera->mCameraMovement.y -= cameraSpeed * deltaTime; //down
         if (mInput.E)
-            mCamera->mCameraMovement.y += mCameraSpeed * deltaTime; //up
+            mCamera->mCameraMovement.y += cameraSpeed * deltaTime; //up
     }
     else
     {
         float moveSpeed = 1.5f;
-        if (mInput.W)
-            Engine::getInstance()->mPlayer->mTransform->position.z -= moveSpeed * deltaTime;//forward
-        if (mInput.S)
-            Engine::getInstance()->mPlayer->mTransform->position.z += moveSpeed * deltaTime;//backward
-        if (mInput.D)
-            Engine::getInstance()->mPlayer->mTransform->position.x += moveSpeed * deltaTime;//right
-        if (mInput.A)
-            Engine::getInstance()->mPlayer->mTransform->position.x -= moveSpeed * deltaTime;//left
+
+        // An empty scene has no player object. Keep keyboard input safe while
+        // the point cloud is being built.
+        GameObject* player = Engine::getInstance()->mPlayer;
+        if (player && player->mTransform)
+        {
+            if (mInput.W)
+                player->mTransform->position.z -= moveSpeed * deltaTime;//forward
+            if (mInput.S)
+                player->mTransform->position.z += moveSpeed * deltaTime;//backward
+            if (mInput.D)
+                player->mTransform->position.x += moveSpeed * deltaTime;//right
+            if (mInput.A)
+                player->mTransform->position.x -= moveSpeed * deltaTime;//left
+	    }
 	}
     mCamera->update();
     statusBar()->showMessage(QString("Camera position ") + "x: " + QString::number(mCamera->mPosition.x) + ", " +
