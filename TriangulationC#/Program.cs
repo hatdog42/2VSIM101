@@ -74,7 +74,7 @@ class Triangulation
 
             var cell = (cellX, cellY);
 
-            if (cells.TryAdd(cell, point)) {}
+            if (cells.TryAdd(cell, point)) {} //one point pr cell with the lowest z value
             else if (point.z < cells[cell].z)
             {
                 cells[cell] = point;
@@ -105,7 +105,6 @@ class Triangulation
 
         for (int i = 0; i < vertices.Length; i++)
         {
-            // Already used to make the initial triangulation
             if (hullPoints.Contains(i))
                 continue;
 
@@ -121,65 +120,48 @@ class Triangulation
     
     List<int> CreateConvexHull(Point[] vertices)
     {
+        // find lowest point if multiple points have the same y use the leftmost one
+        int pivot = Enumerable.Range(0, vertices.Length)
+            .OrderBy(i => vertices[i].y)
+            .ThenBy(i => vertices[i].x)
+            .First();
+
+        // sorts every other point by angle around the pivot if two points have the same angle, put the closest one first.
         int[] sorted = Enumerable.Range(0, vertices.Length)
-            .OrderBy(i => vertices[i].x)
-            .ThenBy(i => vertices[i].y)
+            .Where(i => i != pivot)
+            .OrderBy(i => Math.Atan2(vertices[i].y - vertices[pivot].y, vertices[i].x - vertices[pivot].x))
+            .ThenBy(i =>
+            {
+                double dx = vertices[i].x - vertices[pivot].x;
+                double dy = vertices[i].y - vertices[pivot].y;
+
+                return dx * dx + dy * dy; // same order as sqrt
+            })
             .ToArray();
 
-        List<int> lower = new();
+        Stack<int> hull = new();
+        
+        hull.Push(pivot);
 
-        foreach (int index in sorted)
+        foreach (int i in sorted)
         {
-            while (lower.Count >= 2)
+            while (hull.Count >= 2) // need 3 point for cross product
             {
-                int a = lower[lower.Count - 2];
-                int b = lower[lower.Count - 1];
+                int b = hull.Pop();
+                int a = hull.Peek();
 
-                if (CrossProduct(
-                        vertices[a],
-                        vertices[b],
-                        vertices[index]) > epsilon)
+                if (CrossProduct(vertices[a], vertices[b], vertices[i]) > 0)
                 {
+                    hull.Push(b);
                     break;
                 }
-
-                lower.RemoveAt(lower.Count - 1);
             }
 
-            lower.Add(index);
+            hull.Push(i);
         }
-
-        List<int> upper = new();
-
-        for (int i = sorted.Length - 1; i >= 0; i--)
-        {
-            int index = sorted[i];
-
-            while (upper.Count >= 2)
-            {
-                int a = upper[upper.Count - 2];
-                int b = upper[upper.Count - 1];
-
-                if (CrossProduct(
-                        vertices[a],
-                        vertices[b],
-                        vertices[index]) > epsilon)
-                {
-                    break;
-                }
-
-                upper.RemoveAt(upper.Count - 1);
-            }
-
-            upper.Add(index);
-        }
-
-        lower.RemoveAt(lower.Count - 1);
-        upper.RemoveAt(upper.Count - 1);
-
-        lower.AddRange(upper);
-
-        return lower;
+        
+        List<int> result = hull.Reverse().ToList();
+        return result;
     }
 
     List<Triangle> CreateInaitalTriagulation(List<int> hull)
@@ -255,13 +237,6 @@ class Triangulation
                     break;
             }
         }
-    }
-
-    bool IsPointInsideTriangle(Point point, Triangle triangle)
-    {
-        GetTriangleSides(point, triangle, out double ab, out double bc, out double ca);
-        
-        return ab >= -epsilon && bc >= -epsilon && ca >= -epsilon;
     }
     
     bool IsInsideCircumcircle(Point a, Point b, Point c, Point p)
@@ -633,7 +608,7 @@ class Triangulation
             }
         }
 
-        // They are not actually neighbours
+        // they are not actually neighbours
         if (sharedA == -1 || sharedB == -1)
             return false;
 
