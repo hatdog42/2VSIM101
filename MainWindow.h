@@ -30,7 +30,7 @@ public:
 
     void handleInput(float deltaTime);
 
-    float mCameraSpeed{1.5f};
+    float mCameraSpeed{100.f};
     float mCameraRotateSpeed{ -0.1f };
     int mMouseXlast{0}; //for mouse rotate input
     int mMouseYlast{0};

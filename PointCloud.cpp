@@ -25,6 +25,7 @@ bool PointCloud::loadFromFile(const std::string& filePath)
 
     mPoints.clear();
     mVertices.clear();
+    mTriangleIndices.clear();
     mOrigin = {}; //
     mPoints.reserve(expectedPointCount); // Reserve memory for the expected points
 

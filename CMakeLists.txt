@@ -41,6 +41,7 @@ set(SOURCES
     MainWindow.h MainWindow.cpp
     Mesh.h Mesh.cpp
     PointCloud.h PointCloud.cpp
+    Triangulation.cpp
     Renderer.h Renderer.cpp
     Terrain.h Terrain.cpp
     Texture.h

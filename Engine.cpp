@@ -32,7 +32,7 @@ void Engine::loadMeshes()
 
 void Engine::loadPointCloud()
 {
-    const std::string filePath = std::string(PROJECT_SOURCE_PATH) + "/lasdata.txt";
+    const std::string filePath = std::string(PROJECT_SOURCE_PATH) + "/vertices.txt";
 
     PointCloud* pointCloud = new PointCloud();
 
@@ -44,7 +44,13 @@ void Engine::loadPointCloud()
         return;
     }
 
-    // Store the point cloud and upload its vertices to the Renderer
+    if (!pointCloud->loadTriangulation(std::string(PROJECT_SOURCE_PATH) + "/triangulation.txt"))
+    {
+        delete pointCloud;
+        LOGE("Could not load the terrain triangulation");
+        return;
+    }
+
     mPointCloud = pointCloud;
     mRenderer->createPointCloudVertexBuffer(mPointCloud);
     LOGP("Point cloud ready with %zu points", mPointCloud->getPointCount());

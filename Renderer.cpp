@@ -105,6 +105,26 @@ void Renderer::initVulkan()
     mEngine->loadScene();
 
     mCamera = new Camera();
+    if (mEngine->mPointCloud && !mEngine->mPointCloud->getVertices().empty())
+    {
+        const auto& vertices = mEngine->mPointCloud->getVertices();
+        glm::vec3 minimum = vertices.front().position;
+        glm::vec3 maximum = minimum;
+        for (const Vertex& vertex : vertices)
+        {
+            minimum = glm::min(minimum, vertex.position);
+            maximum = glm::max(maximum, vertex.position);
+        }
+        const glm::vec3 centre = (minimum + maximum) * 0.5f;
+        const float radius = std::max(glm::length(maximum - minimum) * 0.5f, 1.0f);
+        const float aspect = static_cast<float>(swapChainExtent.width) / swapChainExtent.height;
+        const float halfFov = std::atan(std::tan(glm::radians(22.5f)) * std::min(aspect, 1.0f));
+        const float distance = radius / std::sin(halfFov) * 1.1f;
+        mCamera->mPitch = -35.0f;
+        mCamera->mYaw = 0.0f;
+        mCamera->update();
+        mCamera->mPosition = centre - mCamera->mForward * distance;
+    }
     // mLight = new Light(); not used yet, variables hard coded in ubo/pushconstants
 }
 
@@ -196,6 +216,12 @@ void Renderer::cleanup()
         pointCloudVertexBufferMemory = VK_NULL_HANDLE;
     }
     delete mEngine->mPointCloud;
+    if (triangulationIndexBuffer != VK_NULL_HANDLE)
+        vkDestroyBuffer(device, triangulationIndexBuffer, nullptr);
+    if (triangulationIndexMemory != VK_NULL_HANDLE)
+        vkFreeMemory(device, triangulationIndexMemory, nullptr);
+    triangulationIndexBuffer = VK_NULL_HANDLE;
+    triangulationIndexMemory = VK_NULL_HANDLE;
     mEngine->mPointCloud = nullptr;
 
     // Depthbuffer:
@@ -283,6 +309,12 @@ void Renderer::cleanup()
         vkDestroyPipeline(device, pointCloudPipeline, nullptr);
         pointCloudPipeline = VK_NULL_HANDLE;
     }
+    if (triangulationPipeline != VK_NULL_HANDLE)
+        vkDestroyPipeline(device, triangulationPipeline, nullptr);
+    if (triangulationWirePipeline != VK_NULL_HANDLE)
+        vkDestroyPipeline(device, triangulationWirePipeline, nullptr);
+    triangulationPipeline = VK_NULL_HANDLE;
+    triangulationWirePipeline = VK_NULL_HANDLE;
     if (pipelineLayout != VK_NULL_HANDLE)
     {
         vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -996,6 +1028,14 @@ void Renderer::createGraphicsPipeline()
     else
         LOG("created point-cloud pipeline!");
 
+    // The same unlit shaders can draw indexed triangles without normals.
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &triangulationPipeline) != VK_SUCCESS)
+        throw std::runtime_error("failed to create triangulation pipeline!");
+    rasterizer.polygonMode = VK_POLYGON_MODE_LINE;
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &triangulationWirePipeline) != VK_SUCCESS)
+        throw std::runtime_error("failed to create triangulation wireframe pipeline!");
+
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
     vkDestroyShaderModule(device, pointFragShaderModule, nullptr);
@@ -1394,7 +1434,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
         // Draw the point cloud when its CPU and GPU data are ready.
         if (mEngine->mPointCloud != nullptr && pointCloudVertexBuffer != VK_NULL_HANDLE)
         {
-            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pointCloudPipeline);
+            const bool hasTriangles = triangulationIndexBuffer != VK_NULL_HANDLE;
+            const VkPipeline pipeline = hasTriangles
+                ? (mRenderLines ? triangulationWirePipeline : triangulationPipeline)
+                : pointCloudPipeline;
+            vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
 
             VkBuffer vertexBuffers[] = {pointCloudVertexBuffer};
             VkDeviceSize offsets[] = {0};
@@ -1404,10 +1448,17 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t image
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0,
                                     1, &descriptorSets[currentFrame], 0, nullptr);
 
-            // Draw one vertex for each point.
-            vkCmdDraw(commandBuffer,
-                      static_cast<uint32_t>(mEngine->mPointCloud->getVertices().size()),
-                      1, 0, 0);
+            if (hasTriangles)
+            {
+                vkCmdBindIndexBuffer(commandBuffer, triangulationIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(commandBuffer,
+                    static_cast<uint32_t>(mEngine->mPointCloud->getTriangleIndices().size()), 1, 0, 0, 0);
+            }
+            else
+            {
+                vkCmdDraw(commandBuffer,
+                    static_cast<uint32_t>(mEngine->mPointCloud->getVertices().size()), 1, 0, 0);
+            }
         }
 
     vkCmdEndRenderPass(commandBuffer);
@@ -1510,6 +1561,24 @@ void Renderer::createPointCloudVertexBuffer(PointCloud* pointCloud)
     // Upload the vertices and release the temporary buffer
     copyBuffer(stagingBuffer, pointCloudVertexBuffer, bufferSize);
 
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+    const auto& indices = pointCloud->getTriangleIndices();
+    if (indices.empty())
+        return;
+
+    const VkDeviceSize indexSize = sizeof(uint32_t) * indices.size();
+    createBuffer(indexSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuffer, stagingBufferMemory);
+    if (vkMapMemory(device, stagingBufferMemory, 0, indexSize, 0, &data) != VK_SUCCESS)
+        throw std::runtime_error("failed to map triangulation staging memory!");
+    memcpy(data, indices.data(), static_cast<size_t>(indexSize));
+    vkUnmapMemory(device, stagingBufferMemory);
+    createBuffer(indexSize, VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, triangulationIndexBuffer, triangulationIndexMemory);
+    copyBuffer(stagingBuffer, triangulationIndexBuffer, indexSize);
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }

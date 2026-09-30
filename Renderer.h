@@ -90,6 +90,10 @@ private:
     VkPipeline graphicsPipeline2;
     // Point cloud pipeline and GPU vertex data.
     VkPipeline pointCloudPipeline{ VK_NULL_HANDLE };
+    VkPipeline triangulationPipeline{ VK_NULL_HANDLE };
+    VkPipeline triangulationWirePipeline{ VK_NULL_HANDLE };
+    VkBuffer triangulationIndexBuffer{ VK_NULL_HANDLE };
+    VkDeviceMemory triangulationIndexMemory{ VK_NULL_HANDLE };
 
     VkBuffer pointCloudVertexBuffer{ VK_NULL_HANDLE };
     VkDeviceMemory pointCloudVertexBufferMemory{ VK_NULL_HANDLE };
