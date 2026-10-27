@@ -9,6 +9,7 @@
 bool PointCloud::loadTriangulation(const std::string& filePath)
 {
     mTriangleIndices.clear();
+    mNeighbours.clear();
     std::ifstream file(filePath);
     std::size_t triangleCount = 0;
     if (mVertices.empty() || !(file >> triangleCount) || triangleCount == 0 ||
@@ -32,6 +33,8 @@ bool PointCloud::loadTriangulation(const std::string& filePath)
         indices.push_back(static_cast<uint32_t>(a));
         indices.push_back(static_cast<uint32_t>(b));
         indices.push_back(static_cast<uint32_t>(c));
+
+        mNeighbours.push_back({static_cast<int>(neighbourA),static_cast<int>(neighbourB),static_cast<int>(neighbourC)});
     }
     // colores the terain based on hight
     float minHeight = mVertices.front().position.y;

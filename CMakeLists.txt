@@ -44,6 +44,7 @@ set(SOURCES
     Triangulation.cpp
     Renderer.h Renderer.cpp
     Terrain.h Terrain.cpp
+    Physics.h Physics.cpp
     Texture.h
     Transform.h
     Utilities.h
@@ -51,6 +52,7 @@ set(SOURCES
 #
     MainWindow.ui
     MacMetalBridge.mm
+
 )
 
 # all shader and script files shown in IDE
@@ -115,6 +117,8 @@ elseif(MSVC)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/Shaders
         COMMAND "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe" -V "Shader.vert" -o "vert.spv"
         COMMAND "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe" -V "Shader.frag" -o "frag.spv"
+        COMMAND "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe" -V "Terrain.vert" -o "TerrainVert.spv"
+        COMMAND "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe" -V "Terrain.frag" -o "TerrainFrag.spv"
         COMMAND "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe" -V "PhongShader.vert" -o "PhongVert.spv"
         COMMAND "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe" -V "PhongShader.frag" -o "PhongFrag.spv"
     )

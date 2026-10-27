@@ -4,6 +4,11 @@
 #include "Renderer.h"
 #include "Logger.h"
 #include "PointCloud.h"
+#include "Mesh.h"
+#include "GameObject.h"
+#include "Transform.h"
+#include "Physics.h"
+#include <algorithm>
 #include <chrono>
 
 Engine::Engine() :mLogger( Logger::getInstance() )
@@ -27,7 +32,7 @@ void Engine::readTexture(std::string textureName)
 
 void Engine::loadMeshes()
 {
-
+    mMeshes.push_back(new Mesh(mRenderer, Mesh::MeshType::OBJ, "Ball.obj"));
 }
 
 void Engine::loadPointCloud()
@@ -61,6 +66,34 @@ void Engine::loadScene()
     mPlayer = nullptr;
     mNPC = nullptr;
     mTerrain = nullptr;
+
+    mBall = new GameObject();
+    mBall->mMesh = 0; // Ball.obj
+    mBall->mTexture = 0;
+    mBall->mTransform = new Transform{};
+
+    if (mPointCloud && !mPointCloud->getTriangleIndices().empty())
+    {
+        const auto& vertices = mPointCloud->getVertices();
+        const auto& indices = mPointCloud->getTriangleIndices();
+
+        // start at the centre of a triangle halfway through the surface data.
+        const std::size_t first = indices.size() / 3 / 2 * 3 + 30;
+        const glm::vec3& A = vertices[indices[first]].position;
+        const glm::vec3& B = vertices[indices[first + 1]].position;
+        const glm::vec3& C = vertices[indices[first + 2]].position;
+
+        glm::vec3 normal = glm::cross(B - A, C - A);
+        const float normalLength = glm::length(normal);
+        normal = normalLength > 0.00001f ? normal / normalLength : glm::vec3(0, 1, 0);
+        if (normal.y < 0.0f) normal = -normal;
+
+        mBall->mTransform->scale = glm::vec3(0.2f);
+        mBall->mTransform->position = (A + B + C) / 3.0f + 0.2f * normal; // put the ball on a triangle
+        mCurrentBallTriangle = static_cast<int>(first / 3);
+    }
+
+    mGameObjects.push_back(mBall);
 }
 
 // Main Game Loop function
@@ -77,6 +110,41 @@ void Engine::update()
 
     // 1. get input from mouse and keyboard
     mMainWindow->handleInput(deltaTime);
+
+    // Physics
+    Physics physics;
+    glm::vec3& position = mBall->mTransform->position;
+
+    int triangle = physics.findTriangle(*mPointCloud, position, mCurrentBallTriangle);
+
+    const auto& neighbours = mPointCloud->getNeighbours();
+    mCurrentBallTriangle = triangle;
+
+    if (triangle != -1)
+    {
+        const auto& vertices = mPointCloud->getVertices();
+        const auto& indices = mPointCloud->getTriangleIndices();
+
+        const glm::vec3& A = vertices[indices[3 * triangle]].position;
+        const glm::vec3& B = vertices[indices[3 * triangle + 1]].position;
+        const glm::vec3& C = vertices[indices[3 * triangle + 2]].position;
+
+        glm::vec3 acceleration = physics.calculateSlidingAcceleration(A, B, C);
+
+        physics.Move(position, mBallVelocity, acceleration, deltaTime);
+
+        int newTriangle = physics.findTriangle(*mPointCloud, position, mCurrentBallTriangle);
+        mCurrentBallTriangle = newTriangle;
+
+        if (newTriangle != -1)
+        {
+            const glm::vec3& newA = vertices[indices[3 * newTriangle]].position;
+            const glm::vec3& newB = vertices[indices[3 * newTriangle + 1]].position;
+            const glm::vec3& newC = vertices[indices[3 * newTriangle + 2]].position;
+
+            physics.ChangeTriangle(position,mBallVelocity,mBall->mTransform->scale.x,newA, newB, newC);
+        }
+    }
 
     // 2. call the renderer to draw a frame
     mRenderer->update();

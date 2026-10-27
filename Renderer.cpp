@@ -105,26 +105,11 @@ void Renderer::initVulkan()
     mEngine->loadScene();
 
     mCamera = new Camera();
-    if (mEngine->mPointCloud && !mEngine->mPointCloud->getVertices().empty())
-    {
-        const auto& vertices = mEngine->mPointCloud->getVertices();
-        glm::vec3 minimum = vertices.front().position;
-        glm::vec3 maximum = minimum;
-        for (const Vertex& vertex : vertices)
-        {
-            minimum = glm::min(minimum, vertex.position);
-            maximum = glm::max(maximum, vertex.position);
-        }
-        const glm::vec3 centre = (minimum + maximum) * 0.5f;
-        const float radius = std::max(glm::length(maximum - minimum) * 0.5f, 1.0f);
-        const float aspect = static_cast<float>(swapChainExtent.width) / swapChainExtent.height;
-        const float halfFov = std::atan(std::tan(glm::radians(22.5f)) * std::min(aspect, 1.0f));
-        const float distance = radius / std::sin(halfFov) * 1.1f;
-        mCamera->mPitch = -35.0f;
-        mCamera->mYaw = 0.0f;
-        mCamera->update();
-        mCamera->mPosition = centre - mCamera->mForward * distance;
-    }
+    // Fixed starting view: two units behind the ball's initial location (+Z).
+    mCamera->mPosition = glm::vec3(527.f, 112.f, 215.f);
+    mCamera->mPitch = 0.0f;
+    mCamera->mYaw = 0.0f;
+    mCamera->update();
     // mLight = new Light(); not used yet, variables hard coded in ubo/pushconstants
 }
 
@@ -285,6 +270,14 @@ void Renderer::cleanup()
             uniformBuffersMemory[i] = VK_NULL_HANDLE;
         }
     }
+
+    for (GameObject* object : mEngine->mGameObjects)
+    {
+        delete object->mTransform;
+        delete object;
+    }
+    mEngine->mGameObjects.clear();
+    mEngine->mBall = nullptr;
 
     for (auto mesh : mEngine->mMeshes)
     {
@@ -879,6 +872,8 @@ void Renderer::createGraphicsPipeline()
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
     VkShaderModule pointVertShaderModule = createShaderModule(pointVertShaderCode);
     VkShaderModule pointFragShaderModule = createShaderModule(pointFragShaderCode);
+    VkShaderModule terrainVertShaderModule = createShaderModule(readFile(shaderPath + "TerrainVert.spv"));
+    VkShaderModule terrainFragShaderModule = createShaderModule(readFile(shaderPath + "TerrainFrag.spv"));
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1028,10 +1023,15 @@ void Renderer::createGraphicsPipeline()
     else
         LOG("created point-cloud pipeline!");
 
-    // The same unlit shaders can draw indexed triangles without normals.
+    // Light filled terrain using geometric normals calculated in the fragment shader.
+    shaderStages[0].module = terrainVertShaderModule;
+    shaderStages[1].module = terrainFragShaderModule;
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &triangulationPipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create triangulation pipeline!");
+    // Derivative normals require filled triangles. Keep wireframe unlit.
+    shaderStages[0].module = pointVertShaderModule;
+    shaderStages[1].module = pointFragShaderModule;
     rasterizer.polygonMode = VK_POLYGON_MODE_LINE;
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &triangulationWirePipeline) != VK_SUCCESS)
         throw std::runtime_error("failed to create triangulation wireframe pipeline!");
@@ -1040,6 +1040,8 @@ void Renderer::createGraphicsPipeline()
     vkDestroyShaderModule(device, vertShaderModule, nullptr);
     vkDestroyShaderModule(device, pointFragShaderModule, nullptr);
     vkDestroyShaderModule(device, pointVertShaderModule, nullptr);
+    vkDestroyShaderModule(device, terrainFragShaderModule, nullptr);
+    vkDestroyShaderModule(device, terrainVertShaderModule, nullptr);
 }
 
 void Renderer::createFramebuffers()

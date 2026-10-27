@@ -1,6 +1,7 @@
 #ifndef ENGINE_H
 #define ENGINE_H
 
+#include "Physics.h"
 #include "Renderer.h"
 
 class Terrain;
@@ -33,6 +34,7 @@ public:
 
     GameObject* mPlayer{ nullptr };
     GameObject* mNPC{ nullptr };
+    GameObject* mBall{ nullptr };
 
 private:
     Engine();
@@ -46,10 +48,14 @@ private:
 
     Renderer* mRenderer{ nullptr };
     MainWindow* mMainWindow { nullptr };
+    Physics* mPhysics{ nullptr };
 
     std::vector<Mesh*> mMeshes;
     std::vector<Texture*> mTextures;
     PointCloud* mPointCloud{ nullptr };
+
+    glm::vec3 mBallVelocity{0.0f};
+    int mCurrentBallTriangle;
 
     std::vector<GameObject*> mGameObjects; // Vector to the GameObjects
 

@@ -28,9 +28,15 @@ public:
     [[nodiscard]] const std::vector<Vertex>& getVertices() const;
     [[nodiscard]] const Point& getOrigin() const;
 
+    const std::vector<std::array<int, 3>>& getNeighbours() const
+    {
+        return mNeighbours;
+    }
+
 private:
     std::vector<Point> mPoints;
     std::vector<Vertex> mVertices;
+    std::vector<std::array<int, 3>> mNeighbours;
     std::vector<uint32_t> mTriangleIndices;
     Point mOrigin{};
 };

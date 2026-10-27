@@ -4,6 +4,8 @@
 # Seems Mac does not like the extra stuff from glslangValidator
 /Users/ole/VulkanSDK/1.4.341.1/macOS/bin/glslc ./Shader.vert -o ./vert.spv
 /Users/ole/VulkanSDK/1.4.341.1/macOS/bin/glslc ./Shader.frag -o ./frag.spv
+/Users/ole/VulkanSDK/1.4.341.1/macOS/bin/glslc ./Terrain.vert -o ./TerrainVert.spv
+/Users/ole/VulkanSDK/1.4.341.1/macOS/bin/glslc ./Terrain.frag -o ./TerrainFrag.spv
 /Users/ole/VulkanSDK/1.4.341.1/macOS/bin/glslc ./PhongShader.vert -o ./PhongVert.spv
 /Users/ole/VulkanSDK/1.4.341.1/macOS/bin/glslc ./PhongShader.frag -o ./PhongFrag.spv
 

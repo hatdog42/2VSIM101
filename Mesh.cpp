@@ -94,7 +94,7 @@ void Mesh::makeQuad()
 void Mesh::makeObj()
 {
     std::ifstream fileIn;
-    fileIn.open( PATH + "Assets/" + mFileName, std::ifstream::in);
+    fileIn.open( PATH + "/Assets/" + mFileName, std::ifstream::in);
     if(!fileIn)
     {
         LOGE("ERROR: Could not load mesh!");
